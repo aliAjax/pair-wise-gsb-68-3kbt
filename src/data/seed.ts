@@ -1,4 +1,5 @@
-import type { AuditEntry, Claim, VersionRecord } from '../types'
+import { hashBatchContent } from '../lib/merge'
+import type { AuditEntry, Claim, MergeConflict, OfflineBatch, VersionRecord } from '../types'
 
 export const seedClaims: Claim[] = [
   {
@@ -9,8 +10,12 @@ export const seedClaims: Claim[] = [
         id: 'F-1', text: '项目规划文件中曾包含2台柴油发电机组。', conclusion: '已证实', confidence: 98, unresolved: [],
         sources: [
           { id: 'S-1', title: '一期工程环境影响报告表', url: 'https://example.gov.cn/report/2025-1102', publisher: '市生态环境局', publishedAt: '2025-11-02', capturedAt: '2026-09-29T08:40:00', kind: '原始证据', chainOfCustody: '官网下载PDF，哈希时间戳已记录', contentHash: 'sha256:9d31f1...a42c', version: 1 },
-          { id: 'S-2', title: '项目设备采购公告', url: 'https://example.com/tender/8821', publisher: '公共资源交易平台', publishedAt: '2026-01-18', capturedAt: '2026-09-29T08:52:00', kind: '原始证据', chainOfCustody: '官网页面快照与原始附件同时留存', contentHash: 'sha256:7bc029...de10', version: 2 }
-        ], counterSources: [], annotations: [{ id: 'N-1', author: '宋卓', role: '编辑', content: '请补充规划变更批复，不能用采购公告单独代表最终方案。', createdAt: '2026-09-29T10:20:00', resolved: false }]
+          { id: 'S-2', title: '项目设备采购公告', url: 'https://example.com/tender/8821', publisher: '公共资源交易平台', publishedAt: '2026-01-18', capturedAt: '2026-09-29T08:52:00', kind: '原始证据', chainOfCustody: '官网页面快照与原始附件同时留存', contentHash: 'sha256:7bc029...de10', version: 2 },
+          { id: 'S-6', title: '项目规划变更批复', url: 'https://example.gov.cn/reply/2026-091', publisher: '市人民政府', publishedAt: '2026-09-28', capturedAt: '2026-09-29T15:30:00', kind: '原始证据', chainOfCustody: '离线窗口收件扫描件，回网后补传哈希并留档', contentHash: 'sha256:off-reply-091', version: 1 }
+        ], counterSources: [], annotations: [
+          { id: 'N-1', author: '宋卓', role: '编辑', content: '请补充规划变更批复，不能用采购公告单独代表最终方案。', createdAt: '2026-09-29T10:20:00', resolved: false },
+          { id: 'N-3', author: '陆衡', role: '事实核查员', content: '离线取得规划变更批复，柴发机组已取消，建议调整结论。', createdAt: '2026-09-29T15:30:00', resolved: false }
+        ]
       },
       {
         id: 'F-2', text: '最终验收已取消柴油应急电源。', conclusion: '证据不足', confidence: 42, unresolved: ['缺少竣工验收备案原件', '网传截图无文件编号与签章页'],
@@ -36,7 +41,7 @@ export const seedClaims: Claim[] = [
 ]
 
 export const seedVersions: VersionRecord[] = [
-  { id: 'V-1', claimId: 'FC-260929-01', version: 4, editor: '沈言', summary: '补充储能系统招标文件和相反证据，降低第二、第三项事实置信度。', changedFactIds: ['F-2', 'F-3'], removedEvidence: ['匿名聊天记录截图'], createdAt: '2026-09-29T15:30:00' },
+  { id: 'V-1', claimId: 'FC-260929-01', version: 4, editor: '沈言', summary: '补充储能系统招标文件和相反证据，降低第二、第三项事实置信度；合并离线批次 OFF-FC-260929-01-01。', changedFactIds: ['F-1', 'F-2', 'F-3'], removedEvidence: ['匿名聊天记录截图'], createdAt: '2026-09-29T15:30:00', mergedBatchIds: ['OFF-FC-260929-01-01'], conflictIds: ['MC-1'] },
   { id: 'V-2', claimId: 'FC-260929-01', version: 3, editor: '陆衡', summary: '补充匿名截图保管链和未解决疑点。', changedFactIds: ['F-2'], removedEvidence: [], createdAt: '2026-09-29T14:25:00' }
 ]
 
@@ -44,4 +49,44 @@ export const seedAudit: AuditEntry[] = [
   { id: 'A-1', claimId: 'FC-260929-01', action: '建立核查主张', operator: '沈言', detail: '创建3项可验证事实', createdAt: '2026-09-29T08:10:00' },
   { id: 'A-2', claimId: 'FC-260929-01', action: '关联原始证据', operator: '沈言', detail: '关联环评报告和设备采购公告', createdAt: '2026-09-29T08:55:00' },
   { id: 'A-3', claimId: 'FC-260929-01', action: '添加相反证据', operator: '陆衡', detail: '储能招标附件与纯储能结论冲突，保留争议', createdAt: '2026-09-29T14:10:00' }
+]
+
+export const seedConflicts: MergeConflict[] = [
+  {
+    id: 'MC-1', claimId: 'FC-260929-01', factId: 'F-1', type: '结论冲突', resolved: false, detectedAt: '2026-09-29T15:30:00',
+    proposals: [
+      { conclusion: '已证实', batchId: '当前结论', inspector: '沈言', at: '2026-09-29T08:10:00' },
+      { conclusion: '部分属实', batchId: 'OFF-FC-260929-01-01', inspector: '陆衡', at: '2026-09-29T15:30:00' }
+    ]
+  }
+]
+
+const batch01Ops = [
+  { kind: '证据修改' as const, factId: 'F-1', counter: false, conclusion: '部分属实' as const, source: { title: '项目规划变更批复', url: 'https://example.gov.cn/reply/2026-091', publisher: '市人民政府', publishedAt: '2026-09-28', kind: '原始证据' as const, chainOfCustody: '离线窗口收件扫描件，回网后补传哈希并留档', contentHash: 'sha256:off-reply-091' } },
+  { kind: '批注处理' as const, factId: 'F-1', mode: '添加' as const, annotation: { author: '陆衡', role: '事实核查员' as const, content: '离线取得规划变更批复，柴发机组已取消，建议调整结论。' } }
+]
+
+const batch02Ops = [
+  { kind: '证据撤回' as const, factId: 'F-2', sourceId: 'S-3', reason: '截图来源不明，离线核验无法确认原始出处' },
+  { kind: '证据修改' as const, factId: 'F-2', counter: false, conclusion: '部分属实' as const, source: { title: '主管部门书面回复', url: 'https://example.gov.cn/reply/2026-092', publisher: '市住建局', publishedAt: '2026-09-29', kind: '原始证据' as const, chainOfCustody: '离线收件，回网后上传扫描件', contentHash: 'sha256:off-reply-092' } },
+  { kind: '批注处理' as const, factId: 'F-2', mode: '添加' as const, annotation: { author: '陆衡', role: '事实核查员' as const, content: '离线取得主管部门书面回复，验收已取消柴发应急电源。' } }
+]
+
+const batch03Ops = [
+  { kind: '证据撤回' as const, factId: 'F-2', contentHash: 'sha256:off-reply-092', reason: '误传回复件，撤回' }
+]
+
+export const seedBatches: OfflineBatch[] = [
+  {
+    id: 'OFF-FC-260929-01-01', claimId: 'FC-260929-01', inspector: '陆衡', device: '离线采集终端-02', createdAt: '2026-09-29T15:10:00',
+    contentHash: hashBatchContent(batch01Ops), operations: batch01Ops, status: '已应用', appliedAt: '2026-09-29T15:30:00', appliedVersion: 4
+  },
+  {
+    id: 'OFF-FC-260929-01-02', claimId: 'FC-260929-01', inspector: '陆衡', device: '离线采集终端-02', createdAt: '2026-09-29T15:12:00',
+    contentHash: hashBatchContent(batch02Ops), operations: batch02Ops, status: '待处理'
+  },
+  {
+    id: 'OFF-FC-260929-01-03', claimId: 'FC-260929-01', inspector: '陆衡', device: '离线采集终端-02', createdAt: '2026-09-29T15:14:00',
+    contentHash: hashBatchContent(batch03Ops), operations: batch03Ops, status: '失败', failReason: '撤回目标不存在：sha256:off-reply-092'
+  }
 ]
