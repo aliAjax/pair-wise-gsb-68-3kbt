@@ -14,6 +14,7 @@ export interface SourceRecord {
   contentHash: string
   version: number
   supersededBy?: string
+  retracted?: { reason: string; at: string; batchId?: string }
 }
 
 export interface ClaimAnnotation {
@@ -58,6 +59,48 @@ export interface VersionRecord {
   summary: string
   changedFactIds: string[]
   removedEvidence: string[]
+  createdAt: string
+  mergedBatchIds?: string[]
+  conflictIds?: string[]
+}
+
+export type BatchOperation =
+  | { type: 'upsert-source'; factId: string; counter: boolean; source: Omit<SourceRecord, 'id' | 'capturedAt' | 'version' | 'retracted'> }
+  | { type: 'retract-source'; factId: string; sourceId?: string; contentHash?: string; reason: string }
+  | { type: 'add-annotation'; factId: string; author: string; role: ClaimAnnotation['role']; content: string }
+  | { type: 'resolve-annotation'; factId: string; annotationId?: string; matchContent?: string }
+  | { type: 'set-conclusion'; factId: string; conclusion: FactConclusion; note?: string }
+
+export interface OfflineBatch {
+  id: string
+  claimId: string
+  author: string
+  device: string
+  createdOfflineAt: string
+  contentHash: string
+  note: string
+  ops: BatchOperation[]
+}
+
+export type BatchStatus = '待写入' | '已合并' | '重复跳过' | '写入失败'
+
+export interface BatchRecord extends OfflineBatch {
+  status: BatchStatus
+  attempts: number
+  lastError?: string
+  mergedAt?: string
+  mergedVersion?: number
+  effects: string[]
+}
+
+export interface ConclusionConflict {
+  id: string
+  claimId: string
+  factId: string
+  current: { conclusion: FactConclusion; source: string }
+  incoming: { conclusion: FactConclusion; batchId: string; author: string }
+  status: '待裁定' | '已裁定'
+  resolution?: string
   createdAt: string
 }
 
